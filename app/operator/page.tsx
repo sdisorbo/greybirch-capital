@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import Nav from "@/components/Nav";
-import PitchDashboard from "@/components/PitchDashboard";
-import FundDashboard from "@/components/FundDashboard";
+import OperatorTabs from "@/components/OperatorTabs";
 
 export default async function OperatorPage() {
   const session = await getSession();
@@ -10,27 +9,23 @@ export default async function OperatorPage() {
   if (session.user.role !== "operator") redirect("/dashboard");
 
   return (
-    <div className="min-h-screen bg-stone-100">
+    <div className="min-h-screen bg-white">
       <Nav role="operator" />
 
-      <main className="pt-28 pb-20">
-        {/* Page header */}
-        <div className="max-w-6xl mx-auto px-6 mb-8">
-          <p className="text-xs tracking-[0.2em] uppercase text-stone-400 mb-2 font-sans">
+      {/* Green header band matching nav */}
+      <div style={{ background: "#3C443D" }} className="pt-20 pb-10 px-6">
+        <div className="max-w-6xl mx-auto">
+          <p className="text-xs tracking-[0.2em] uppercase font-sans mb-2" style={{ color: "rgba(231,220,70,0.7)" }}>
             Operator View
           </p>
-          <h1 className="font-serif text-3xl font-medium text-stone-900">
-            Command Center
-          </h1>
-          <div className="w-6 h-px bg-stone-300 mt-3" />
+          <h1 className="font-serif text-3xl font-medium text-white">Command Center</h1>
+          <div className="w-6 h-1 mt-4 rounded-full" style={{ background: "#E7DC46" }} />
         </div>
+      </div>
 
-        {/* Tabs */}
+      <main className="pt-8 pb-20">
         <OperatorTabs />
       </main>
     </div>
   );
 }
-
-// Tab wrapper — client rendered for interactivity
-import OperatorTabs from "@/components/OperatorTabs";

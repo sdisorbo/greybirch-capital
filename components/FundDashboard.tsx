@@ -127,10 +127,10 @@ export default function FundDashboard({ isOperator }: Props) {
             <Line
               type="monotone"
               dataKey="total"
-              stroke="#1c1917"
+              stroke="#3C443D"
               strokeWidth={1.5}
               dot={false}
-              activeDot={{ r: 3, fill: "#1c1917" }}
+              activeDot={{ r: 3, fill: "#3C443D" }}
             />
           </LineChart>
         </ResponsiveContainer>
@@ -169,13 +169,16 @@ export default function FundDashboard({ isOperator }: Props) {
                 value={newTotal}
                 onChange={(e) => setNewTotal(e.target.value)}
                 placeholder="New total (e.g. 125)"
-                className="w-full bg-white border border-stone-200 focus:border-stone-400 outline-none px-3 py-2.5 text-sm text-stone-800 transition-colors"
+                className="w-full bg-white border border-stone-200 focus:border-[#3C443D] outline-none px-3 py-2.5 text-sm text-stone-800 transition-colors"
               />
             </div>
             <button
               type="submit"
               disabled={saving}
-              className="bg-stone-900 hover:bg-stone-700 text-stone-50 text-sm px-5 py-2.5 transition-colors disabled:opacity-50 whitespace-nowrap"
+              className="text-sm px-5 py-2.5 transition-colors disabled:opacity-50 whitespace-nowrap font-semibold"
+              style={{ background: "#3C443D", color: "#E7DC46" }}
+              onMouseEnter={e => (e.currentTarget.style.background = "#2a4d3a")}
+              onMouseLeave={e => (e.currentTarget.style.background = "#3C443D")}
             >
               {saving ? "Saving…" : "Submit Update"}
             </button>

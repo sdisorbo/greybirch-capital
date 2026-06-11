@@ -1,14 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import PitchDashboard from "./PitchDashboard";
+import PitchDashboard, { ReferenceTable } from "./PitchDashboard";
 import FundDashboard from "./FundDashboard";
 
 const TABS = [
-  { id: "pitch",  label: "Pitch Model" },
-  { id: "fund",   label: "Fund Performance" },
+  { id: "pitch", label: "Pitch Model" },
+  { id: "fund",  label: "Fund Performance" },
 ] as const;
 type TabId = typeof TABS[number]["id"];
+
+const GREEN  = "#3C443D";
+const YELLOW = "#E7DC46";
 
 export default function OperatorTabs() {
   const [active, setActive] = useState<TabId>("pitch");
@@ -16,16 +19,17 @@ export default function OperatorTabs() {
   return (
     <div className="max-w-6xl mx-auto px-6">
       {/* Tab bar */}
-      <div className="flex gap-0 border-b border-stone-300 mb-8">
+      <div className="flex gap-0 border-b-2 border-stone-200 mb-8">
         {TABS.map((t) => (
           <button
             key={t.id}
             onClick={() => setActive(t.id)}
-            className={`px-5 py-2.5 text-sm font-sans tracking-wide transition-colors border-b-2 -mb-px ${
-              active === t.id
-                ? "border-stone-900 text-stone-900"
-                : "border-transparent text-stone-500 hover:text-stone-800"
-            }`}
+            className="px-5 py-2.5 text-sm font-sans tracking-wide transition-all border-b-2 -mb-[2px]"
+            style={{
+              borderColor:   active === t.id ? GREEN : "transparent",
+              color:         active === t.id ? GREEN : "#78716c",
+              fontWeight:    active === t.id ? 600   : 400,
+            }}
           >
             {t.label}
           </button>
@@ -34,14 +38,17 @@ export default function OperatorTabs() {
 
       {active === "pitch" && (
         <div>
-          <div className="mb-4">
-            <p className="text-xs text-stone-500 font-sans leading-relaxed">
-              Live MLB game feed — half-inning pitch count predictions powered by binary LightGBM classifiers.
-              Bars and +EV flags update every 30s. Bars currently show model estimates;{" "}
-              <span className="text-stone-700">connect your Python predictor at <code className="bg-stone-200 px-1 text-xs">PREDICTOR_URL</code> for live ML predictions.</span>
-            </p>
-          </div>
+          <p className="text-xs text-stone-400 font-sans leading-relaxed mb-6">
+            Live MLB game feed — half-inning pitch count predictions powered by binary LightGBM classifiers.
+            Refreshes every 30s.{" "}
+            <span className="text-stone-500">
+              Connect your Python predictor at{" "}
+              <code className="bg-stone-100 px-1 text-[10px] rounded">PREDICTOR_URL</code>{" "}
+              for live ML output.
+            </span>
+          </p>
           <PitchDashboard />
+          <ReferenceTable />
         </div>
       )}
 

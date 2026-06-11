@@ -11,9 +11,44 @@ const TEAM_ABBR: Record<number, string> = {
 };
 
 async function fetchJson(url: string) {
-  const res = await fetch(url, { next: { revalidate: 30 } });
+  const res = await fetch(url, { next: { revalidate: 0 } });
   if (!res.ok) throw new Error(`MLB API ${res.status}: ${url}`);
   return res.json();
+}
+
+function getNextBatters(
+  order: number[],
+  players: Record<string, { person?: { id: number; fullName: string }; batSide?: { code: string } }>,
+  allPlays: { about?: { halfInning?: string }; matchup?: { batter?: { id: number } } }[],
+  sideKey: "top" | "bottom",
+  n = 3
+): { id: number; name: string; stand: string }[] {
+  if (!order.length) return [];
+
+  let lastIdx = -1;
+  for (const play of [...allPlays].reverse()) {
+    if (play.about?.halfInning === sideKey) {
+      const bid = play.matchup?.batter?.id;
+      if (bid && order.includes(bid)) {
+        lastIdx = order.indexOf(bid);
+        break;
+      }
+    }
+  }
+
+  const batters = [];
+  for (let i = 0; i < n; i++) {
+    const slot = (lastIdx + 1 + i) % order.length;
+    const pid  = order[slot];
+    const key  = `ID${pid}`;
+    const p    = players[key] ?? {};
+    batters.push({
+      id:    pid,
+      name:  p.person?.fullName ?? "Unknown",
+      stand: p.batSide?.code ?? "R",
+    });
+  }
+  return batters;
 }
 
 export async function GET() {
@@ -28,37 +63,65 @@ export async function GET() {
       for (const g of date.games ?? []) {
         const awayId = g.teams?.away?.team?.id;
         const homeId = g.teams?.home?.team?.id;
-        const status = g.status?.abstractGameState ?? "Preview"; // Preview | Live | Final
+        const status = g.status?.abstractGameState ?? "Preview";
 
         let liveData = null;
         if (status === "Live" || status === "Final") {
           try {
-            const feed = await fetchJson(
-              `${MLB_BASE}/api/v1.1/game/${g.gamePk}/feed/live`
+            const feed = await fetchJson(`${MLB_BASE}/api/v1.1/game/${g.gamePk}/feed/live`);
+            const ls   = feed.liveData?.linescore ?? {};
+            const gd   = feed.gameData ?? {};
+            const ld   = feed.liveData ?? {};
+
+            const defSide  = ls.inningHalf === "Top" ? "home"  : "away";
+            const offSide  = ls.inningHalf === "Top" ? "away"  : "home";
+            const pitcher  = ls.defense?.pitcher ?? null;
+
+            // Count pitches thrown today by current pitcher
+            let pitchesToday = 0;
+            const allPlays: { about?: { halfInning?: string; isComplete?: boolean }; pitchIndex?: number[] }[] =
+              ld.plays?.allPlays ?? [];
+            for (const play of allPlays) {
+              const matchupPid = (play as { matchup?: { pitcher?: { id: number } } }).matchup?.pitcher?.id;
+              if (matchupPid === pitcher?.id) {
+                pitchesToday += (play.pitchIndex ?? []).length;
+              }
+            }
+
+            // Next batters for the offense side
+            const offKey    = offSide as "away" | "home";
+            const order     = ld.boxscore?.teams?.[offKey]?.battingOrder ?? [];
+            const players   = ld.boxscore?.teams?.[offKey]?.players ?? {};
+            const sideKey   = offSide === "away" ? "top" : "bottom";
+            const nextBatters = getNextBatters(
+              order, players, ld.plays?.allPlays ?? [], sideKey as "top" | "bottom"
             );
+
             liveData = {
-              inning: feed.liveData?.linescore?.currentInning ?? 0,
-              inningHalf: feed.liveData?.linescore?.inningHalf ?? "Top",
-              awayScore: feed.liveData?.linescore?.teams?.away?.runs ?? 0,
-              homeScore: feed.liveData?.linescore?.teams?.home?.runs ?? 0,
-              currentPitcher: feed.liveData?.linescore?.defense?.pitcher ?? null,
-              outs: feed.liveData?.linescore?.outs ?? 0,
+              inning:         ls.currentInning       ?? 0,
+              inningHalf:     ls.inningHalf          ?? "Top",
+              awayScore:      ls.teams?.away?.runs   ?? 0,
+              homeScore:      ls.teams?.home?.runs   ?? 0,
+              outs:           ls.outs                ?? 0,
+              currentPitcher: pitcher ? {
+                id:       pitcher.id,
+                fullName: pitcher.fullName ?? "",
+                hand:     gd.players?.[`ID${pitcher.id}`]?.pitchHand?.code ?? "R",
+                pitches:  pitchesToday,
+              } : null,
+              nextBatters,
+              scoreDiff: (ls.teams?.away?.runs ?? 0) - (ls.teams?.home?.runs ?? 0),
             };
-          } catch {
-            // live fetch failed — skip it
-          }
+          } catch { /* live fetch failed */ }
         }
 
         const awayProb = g.teams?.away?.probablePitcher;
         const homeProb = g.teams?.home?.probablePitcher;
 
-        // Parse game time to ET (UTC-4 in summer)
         let gameTime = "";
         if (g.gameDate) {
-          const d = new Date(g.gameDate);
-          gameTime = d.toLocaleTimeString("en-US", {
-            hour: "numeric", minute: "2-digit",
-            timeZone: "America/New_York",
+          gameTime = new Date(g.gameDate).toLocaleTimeString("en-US", {
+            hour: "numeric", minute: "2-digit", timeZone: "America/New_York",
           }) + " ET";
         }
 
@@ -73,9 +136,9 @@ export async function GET() {
           awayName: g.teams?.away?.team?.name ?? "",
           homeName: g.teams?.home?.team?.name ?? "",
           awayProbName: awayProb?.fullName ?? "TBD",
-          awayProbId: awayProb?.id ?? null,
+          awayProbId:   awayProb?.id ?? null,
           homeProbName: homeProb?.fullName ?? "TBD",
-          homeProbId: homeProb?.id ?? null,
+          homeProbId:   homeProb?.id ?? null,
           liveData,
         });
       }
