@@ -174,7 +174,7 @@ function GameCard({ game: g }: { game: Game }) {
     }
 
     try {
-      const res = await fetch("/api/ml", {
+      const res = await fetch("/api/predict", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

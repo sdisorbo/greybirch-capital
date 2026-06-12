@@ -1,8 +1,11 @@
 {
   "functions": {
-    "api/ml.py": {
+    "py/predict.py": {
       "maxDuration": 30,
       "memory": 1024
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/api/predict", "destination": "/py/predict" }
+  ]
 }

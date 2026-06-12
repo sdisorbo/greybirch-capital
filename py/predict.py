@@ -19,7 +19,7 @@ _predictor = None
 def _get_predictor():
     global _predictor
     if _predictor is None:
-        from ml_core import Predictor
+        from predict_core import Predictor
         _predictor = Predictor()
     return _predictor
 
