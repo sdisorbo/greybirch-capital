@@ -3,7 +3,7 @@ import { readFundData, updateFundTotal } from "@/lib/fund";
 import { getSession } from "@/lib/session";
 
 export async function GET() {
-  const data = readFundData();
+  const data = await readFundData();
   return NextResponse.json(data);
 }
 
@@ -18,6 +18,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid total" }, { status: 400 });
   }
 
-  const updated = updateFundTotal(total);
+  const updated = await updateFundTotal(total);
   return NextResponse.json(updated);
 }
