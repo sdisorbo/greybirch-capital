@@ -1,5 +1,5 @@
 /**
- * Local dev proxy — in production Vercel routes /api/predict
+ * Local dev proxy — in production Vercel routes /api/ml
  * directly to api/predict.py (this file is never hit on Vercel).
  */
 import { NextRequest, NextResponse } from "next/server";

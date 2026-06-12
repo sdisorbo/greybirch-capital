@@ -1,10 +1,16 @@
 """
 Prediction logic — loaded once per warm Vercel instance.
 """
-import pickle
-import logging
+import ctypes, os, pickle, logging
 from pathlib import Path
 from datetime import date
+
+# libgomp is required by LightGBM but not in the default Lambda LD path
+for _gomp in ["/usr/lib64/libgomp.so.1", "/usr/lib/x86_64-linux-gnu/libgomp.so.1",
+              "/usr/lib/libgomp.so.1"]:
+    if os.path.exists(_gomp):
+        ctypes.CDLL(_gomp)
+        break
 
 import numpy as np
 import pandas as pd
