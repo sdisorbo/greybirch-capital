@@ -1,3 +1,5 @@
+import { createClient } from "@supabase/supabase-js";
+
 export interface FundEntry {
   date: string;
   total: number;
@@ -10,29 +12,41 @@ export interface FundData {
 
 const DEFAULT: FundData = { current: 118, history: [{ date: "2026-06-11", total: 118 }] };
 
-// On Vercel, KV_REST_API_URL is set automatically when a KV store is linked.
-// Locally, falls back to reading data/fund.json from disk.
-async function kvGet(): Promise<FundData | null> {
-  const url = process.env.KV_REST_API_URL;
-  const token = process.env.KV_REST_API_TOKEN;
-  if (!url || !token) return null;
-  const res = await fetch(`${url}/get/fund`, { headers: { Authorization: `Bearer ${token}` } });
-  if (!res.ok) return null;
-  const json = await res.json();
-  return json.result ? (JSON.parse(json.result) as FundData) : null;
+function getClient() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key);
 }
 
-async function kvSet(data: FundData): Promise<void> {
-  const url = process.env.KV_REST_API_URL;
-  const token = process.env.KV_REST_API_TOKEN;
-  if (!url || !token) return;
-  await fetch(`${url}/set/fund`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify(JSON.stringify(data)),
-  });
+export async function readFundData(): Promise<FundData> {
+  const sb = getClient();
+  if (!sb) return diskGet();
+
+  const { data, error } = await sb.from("fund").select("date, total").order("id");
+  if (error || !data || data.length === 0) return diskGet();
+
+  const history = data.map((r) => ({ date: r.date as string, total: Number(r.total) }));
+  return { current: history[history.length - 1].total, history };
 }
 
+export async function updateFundTotal(newTotal: number): Promise<FundData> {
+  const sb = getClient();
+  const today = new Date().toISOString().split("T")[0];
+
+  if (sb) {
+    const { data: existing } = await sb.from("fund").select("id").eq("date", today).maybeSingle();
+    if (existing) {
+      await sb.from("fund").update({ total: newTotal }).eq("date", today);
+    } else {
+      await sb.from("fund").insert({ date: today, total: newTotal });
+    }
+  }
+
+  return readFundData();
+}
+
+// Local dev fallback
 function diskGet(): FundData {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -44,33 +58,4 @@ function diskGet(): FundData {
   } catch {
     return DEFAULT;
   }
-}
-
-function diskSet(data: FundData): void {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const fs = require("fs") as typeof import("fs");
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const path = require("path") as typeof import("path");
-    fs.writeFileSync(path.join(process.cwd(), "data", "fund.json"), JSON.stringify(data, null, 2));
-  } catch { /* read-only in production */ }
-}
-
-export async function readFundData(): Promise<FundData> {
-  return (await kvGet()) ?? diskGet();
-}
-
-export async function updateFundTotal(newTotal: number): Promise<FundData> {
-  const data = await readFundData();
-  const today = new Date().toISOString().split("T")[0];
-  const last = data.history[data.history.length - 1];
-  if (last?.date === today) {
-    last.total = newTotal;
-  } else {
-    data.history.push({ date: today, total: newTotal });
-  }
-  data.current = newTotal;
-  await kvSet(data);
-  diskSet(data);
-  return data;
 }
