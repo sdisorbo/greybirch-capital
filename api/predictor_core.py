@@ -1,16 +1,10 @@
 """
-Prediction logic — loaded once per warm Vercel instance.
+Pure-Python + NumPy inference — no LightGBM or libgomp required.
+Loads exported JSON bundles (trees + isotonic calibration).
 """
-import ctypes, os, pickle, logging
+import json, math, logging
 from pathlib import Path
 from datetime import date
-
-# libgomp is required by LightGBM but not in the default Lambda LD path
-for _gomp in ["/usr/lib64/libgomp.so.1", "/usr/lib/x86_64-linux-gnu/libgomp.so.1",
-              "/usr/lib/libgomp.so.1"]:
-    if os.path.exists(_gomp):
-        ctypes.CDLL(_gomp)
-        break
 
 import numpy as np
 import pandas as pd
@@ -25,19 +19,44 @@ THRESHOLDS = {"0-9": 0.20, "10-14": 0.40, "15-19": 0.32, "20-24": 0.22, "25+": 0
 EV_ROIS    = {"0-9": 3.20, "10-14": 0.067, "15-19": 0.018, "20-24": 0.032, "25+": 0.674}
 
 
+def _traverse(node: dict, feat: list) -> float:
+    while "split_index" in node:
+        fi = node["split_feature"]
+        v  = feat[fi] if fi < len(feat) else 0.0
+        if v is None or (isinstance(v, float) and math.isnan(v)):
+            go_left = node.get("default_left", True)
+        else:
+            go_left = v <= node["threshold"]
+        node = node["left_child"] if go_left else node["right_child"]
+    return node["leaf_value"]
+
+
+def _raw_score(trees: list, feat: list) -> float:
+    return sum(_traverse(t["tree_structure"], feat) for t in trees)
+
+
+def _sigmoid(x: float) -> float:
+    return 1.0 / (1.0 + math.exp(-x))
+
+
+def _isotonic_predict(x_thresh: list, y_thresh: list, p: float) -> float:
+    arr = np.array(x_thresh)
+    idx = int(np.clip(np.searchsorted(arr, p, side="right") - 1, 0, len(y_thresh) - 1))
+    return float(y_thresh[idx])
+
+
 class Predictor:
     def __init__(self):
-        log.info("Loading models from %s", MODELS_DIR)
-        self.models = {}
+        log.info("Loading JSON models from %s", MODELS_DIR)
+        self.bundles = {}
         for b in BINS:
             safe = b.replace("+", "plus").replace("-", "_")
-            with open(MODELS_DIR / f"binary_model_{safe}.pkl", "rb") as f:
-                self.models[b] = pickle.load(f)
+            with open(MODELS_DIR / f"binary_model_{safe}.json") as f:
+                self.bundles[b] = json.load(f)
         self.pitcher_season  = pd.read_parquet(MODELS_DIR / "pitcher_season_stats.parquet")
         self.pitcher_rolling = pd.read_parquet(MODELS_DIR / "rolling_pitcher_stats.parquet")
         self.batter_season   = pd.read_parquet(MODELS_DIR / "batter_season_stats.parquet")
-        log.info("Ready — %d pitcher-seasons, %d batter-seasons",
-                 len(self.pitcher_season), len(self.batter_season))
+        log.info("Ready — %d pitcher-seasons loaded", len(self.pitcher_season))
 
     def _pitcher_season_stats(self, pitcher_id: int, season: int) -> dict:
         df  = self.pitcher_season
@@ -123,13 +142,23 @@ class Predictor:
             feat[f"lineup_{k}"] = float(np.nanmean(vals)) if any(not np.isnan(v) for v in vals) else np.nan
 
         results = {}
-        for b, bundle in self.models.items():
-            avail   = bundle["features"]
-            medians = pd.Series(bundle["medians"])
-            row_df  = pd.DataFrame([{f: feat.get(f, np.nan) for f in avail}])
-            row_df  = row_df.fillna(medians.reindex(avail))
-            prob    = float(bundle["model"].predict_proba(row_df)[0, 1])
-            ev      = prob * (1 + ODDS[b] / 100) - 1
+        for b, bundle in self.bundles.items():
+            features = bundle["features"]
+            medians  = bundle["medians"]
+            cal      = bundle["calibration"]
+            trees    = bundle["booster"]["tree_info"]
+
+            feat_vec = []
+            for f in features:
+                v = feat.get(f, medians.get(f))
+                if v is None or (isinstance(v, float) and math.isnan(v)):
+                    v = medians.get(f) or 0.0
+                feat_vec.append(float(v))
+
+            raw  = _raw_score(trees, feat_vec)
+            prob = _isotonic_predict(cal["X_thresholds"], cal["y_thresholds"], _sigmoid(raw))
+            ev   = prob * (1 + ODDS[b] / 100) - 1
+
             results[b] = {
                 "prob":           round(prob, 4),
                 "aboveThreshold": prob >= THRESHOLDS[b],
